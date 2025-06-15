@@ -35,12 +35,10 @@ const FileShareApp = () => {
   const [incomingRequest, setIncomingRequest] = useState(null);
   const [myDeviceIp, setMyDeviceIp] = useState(null);
 
-  // Keep track of notifications we've already seen
   const processedRequests = useRef(new Set());
   const notificationTimeout = useRef(null);
 
   useEffect(() => {
-    // Get local device IP address and log it (for debugging or display)
     const getLocalIp = async () => {
       try {
         const res = await axios.get("http://localhost:5000/ip");
@@ -53,23 +51,19 @@ const FileShareApp = () => {
     getLocalIp();
   }, []);
 
-  // Keep a reference to the selected device
   const selectedDevice = availableDevices.find(
     (device) => device.name === selectedDeviceId
   );
 
-  // Create dynamic socket connection to selected device when needed
   const [targetSocket, setTargetSocket] = useState(null);
 
   useEffect(() => {
-    // When selected device changes, establish a new socket connection if needed
     if (selectedDevice && currentStep === "select-device") {
       const deviceUrl = `http://${selectedDevice.addresses[0]}:${selectedDevice.port}`;
       console.log(`Connecting to device at: ${deviceUrl}`);
       const newSocket = io(deviceUrl);
       setTargetSocket(newSocket);
 
-      // Clean up socket on component unmount or device change
       return () => {
         if (newSocket) {
           console.log(`Disconnecting from: ${deviceUrl}`);
@@ -80,11 +74,9 @@ const FileShareApp = () => {
     }
   }, [selectedDeviceId, selectedDevice, currentStep]);
 
-  // Handle incoming transfer requests
   const handleTransferRequest = useCallback((data) => {
     console.log("Received transfer request:", data);
 
-    // Check if we've already processed this request
     if (processedRequests.current.has(data.transferId)) {
       console.log(
         `Already processed request ${data.transferId}, ignoring duplicate`
@@ -92,34 +84,26 @@ const FileShareApp = () => {
       return;
     }
 
-    // Store the request ID to avoid processing duplicates
     processedRequests.current.add(data.transferId);
 
-    // Send acknowledgment
     socket.emit("transferRequestAck", { transferId: data.transferId });
 
-    // Show the notification popup
     setIncomingRequest(data);
     setShowRequestPopup(true);
 
-    // Clear any existing timeout and set a new one
     if (notificationTimeout.current) {
       clearTimeout(notificationTimeout.current);
     }
 
-    // Auto-hide after 5 minutes if no action taken
     notificationTimeout.current = setTimeout(() => {
       setShowRequestPopup(false);
     }, 5 * 60 * 1000);
 
-    // Also make notification noticeable using browser notification if possible
     try {
-      // Play notification sound if browser supports it
       const audio = new Audio("./notification.mp3");
       audio.volume = 0.7; // Set volume to 70%
       audio.play().catch((e) => console.log("No sound available:", e));
 
-      // Request browser notification permission if needed
       if ("Notification" in window && Notification.permission === "granted") {
         new Notification("LocalShare: Incoming Transfer", {
           body: `${data.from} wants to send you ${data.fileCount} ${
@@ -147,7 +131,6 @@ const FileShareApp = () => {
         });
       }
 
-      // Flash the window title as a fallback notification method
       let originalTitle = document.title;
       let flashInterval = setInterval(() => {
         document.title =
@@ -156,7 +139,6 @@ const FileShareApp = () => {
             : originalTitle;
       }, 1000);
 
-      // Stop flashing when popup is dismissed
       setTimeout(() => {
         clearInterval(flashInterval);
         document.title = originalTitle;
@@ -167,16 +149,12 @@ const FileShareApp = () => {
   }, []);
 
   useEffect(() => {
-    // Load devices when the component mounts
     loadDevices();
 
-    // Set up polling to refresh devices every 10 seconds
     const intervalId = setInterval(loadDevices, 10000);
 
-    // Socket listeners for incoming transfer requests
     socket.on("transferRequest", handleTransferRequest);
 
-    // Clear interval and socket listeners when component unmounts
     return () => {
       clearInterval(intervalId);
       socket.off("transferRequest");
@@ -186,17 +164,12 @@ const FileShareApp = () => {
     };
   }, [handleTransferRequest]);
 
-  // Set up listener for transfer status on the socket
   useEffect(() => {
     if (!socket) return;
 
-    // Listen for transfer status updates
     const handleTransferStatus = (data) => {
-      console.log("Transfer status update received:", data);
-
       if (data.transferId === transferId) {
         if (data.status === "accepted") {
-          console.log("Transfer accepted, proceeding with upload");
           uploadFiles(data.transferId);
         } else if (data.status === "declined") {
           setTransferStatus("declined");
@@ -235,16 +208,14 @@ const FileShareApp = () => {
     setTransferProgress(0);
 
     try {
-      // Generate a transfer request ID
       const newTransferId = `transfer-${Date.now()}-${Math.random()
         .toString(36)
         .substr(2, 5)}`;
       setTransferId(newTransferId);
 
-      // Send transfer request to the selected device via its socket
       targetSocket.emit("requestTransfer", {
         transferId: newTransferId,
-        from: "This Device", // Could be replaced with your device name
+        from: "This Device",
         fileCount: selectedFiles.length,
         totalSize: calculateTotalSize(selectedFiles),
         sender: {
@@ -256,7 +227,6 @@ const FileShareApp = () => {
       console.log(
         `Transfer request sent to ${selectedDevice.name} with ID: ${newTransferId}`
       );
-      // Now we wait for the recipient's response via the transferStatus event
     } catch (error) {
       console.error("Error requesting transfer:", error);
       setTransferStatus("error");
@@ -278,16 +248,12 @@ const FileShareApp = () => {
     setTransferProgress(0);
 
     try {
-      // Create form data to handle file uploads properly
-      console.log("Transfering files");
       const formData = new FormData();
 
-      // Append each file to the form data
       selectedFiles.forEach((file) => {
         formData.append("files", file.file);
       });
 
-      // Configure axios to handle progress events
       const config = {
         onUploadProgress: (progressEvent) => {
           const percentCompleted = Math.round(
@@ -303,14 +269,12 @@ const FileShareApp = () => {
         },
       };
 
-      // Make the request to the selected device
       const response = await axios.post(
         `http://${selectedDevice.addresses[0]}:${selectedDevice.port}/upload`,
         formData,
         config
       );
 
-      // Handle successful response
       if (response.data.success) {
         setTransferStatus("completed");
         setTransferProgress(100);
@@ -323,7 +287,6 @@ const FileShareApp = () => {
     }
   };
 
-  // Handle response to incoming transfer request
   const handleTransferResponse = (accepted) => {
     if (!incomingRequest || !incomingRequest.sender) {
       console.error("No valid incoming request to respond to");
@@ -336,74 +299,35 @@ const FileShareApp = () => {
       }`
     );
 
-    // Clear notification timeout
     if (notificationTimeout.current) {
       clearTimeout(notificationTimeout.current);
       notificationTimeout.current = null;
     }
 
     try {
-      // Create a direct socket connection to the sender
       const senderUrl = `http://${incomingRequest.sender.senderIp}:${incomingRequest.sender.senderPort}`;
-      console.log(`Connecting to sender at ${senderUrl} to send response`);
 
-      // Create a temporary socket for this response
       const senderSocket = io(senderUrl);
 
-      let responseAttempts = 0;
-      const maxAttempts = 5;
-      let responseTimer = null;
-
-      // Function to send response with retry capability
-      const sendResponse = () => {
-        if (responseAttempts >= maxAttempts) {
-          console.error("Failed to send response after maximum attempts");
-          if (responseTimer) clearInterval(responseTimer);
-          senderSocket.disconnect();
-          return;
-        }
-
-        responseAttempts++;
-        console.log(`Sending response attempt ${responseAttempts}`);
-
-        senderSocket.emit("transferResponse", {
-          transferId: incomingRequest.transferId,
-          accepted,
-        });
-      };
-
-      // Wait for connection before sending response
       senderSocket.on("connect", () => {
         console.log(
           `Connected to sender, sending response for ${incomingRequest.transferId}`
         );
 
-        // Send initial response
-        sendResponse();
+        senderSocket.emit("transferResponse", {
+          transferId: incomingRequest.transferId,
+          accepted,
+        });
 
-        // Set up retry interval (send every 2 seconds until max attempts)
-        responseTimer = setInterval(() => {
-          if (responseAttempts < maxAttempts) {
-            sendResponse();
-          } else {
-            clearInterval(responseTimer);
-            senderSocket.disconnect();
-          }
-        }, 2000);
-
-        // Disconnect after a reasonable timeout (10 seconds)
         setTimeout(() => {
-          if (responseTimer) clearInterval(responseTimer);
           senderSocket.disconnect();
-          console.log("Response sending completed, disconnected from sender");
-        }, 10000);
+          console.log("Response sent, disconnected from sender");
+        }, 1000);
       });
 
-      // Handle connection errors
       senderSocket.on("connect_error", (err) => {
         console.error(`Failed to connect to sender: ${err}`);
 
-        // Try an alternative approach - send through our own socket
         console.log("Trying alternative response method through main socket");
         socket.emit("transferResponse", {
           transferId: incomingRequest.transferId,
@@ -412,7 +336,6 @@ const FileShareApp = () => {
       });
     } catch (error) {
       console.error("Error sending transfer response:", error);
-      // Fallback method
       socket.emit("transferResponse", {
         transferId: incomingRequest.transferId,
         accepted,

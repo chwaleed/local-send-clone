@@ -102,19 +102,14 @@ io.on("connection", (socket) => {
 
   // Handle transfer responses (accept/decline) with reliable delivery
   socket.on("transferResponse", (data) => {
-    console.log("🔄 Transfer response received:", data);
-
     const { transferId, accepted } = data;
     console.log("Transfer ID:", transferId, accepted);
 
-    // Update transfer status in pending transfers
-    if (pendingTransfers.has(transferId)) {
-      const transfer = pendingTransfers.get(transferId);
-      transfer.status = accepted ? "accepted" : "declined";
-      pendingTransfers.set(transferId, transfer);
+    if (accepted) {
+      if (!pendingTransfers.has(transferId)) {
+        pendingTransfers.set(transferId, { pending: true });
+      }
     }
-
-    // Send status update to all clients
     sendTransferStatusUpdate(transferId, accepted);
   });
 
@@ -246,12 +241,10 @@ function sendTransferStatusUpdate(transferId, accepted) {
     status: accepted ? "accepted" : "declined",
   };
 
-  // Log the status update being sent
   console.log(
     `📤 Sending transfer status update: ${JSON.stringify(statusData)}`
   );
 
-  // Send to all connected clients for reliability
   io.emit("transferStatus", statusData);
 }
 
